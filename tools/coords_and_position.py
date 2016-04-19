@@ -22,56 +22,75 @@
 """
 import midvatten_utils as utils
 
-class updatecoordinates():
 
-    def __init__(self, observations=[]):#observations is supposed to be a list of unicode strings
-        self.observations = observations
-        i = 0
-        for obs in observations:
-                self.observations[i] = obs.encode('utf-8') #turn into a list of python byte strings
-                i += 1
-        self.sqlpart2 =(str(self.observations).encode('utf-8').replace('[','(')).replace(']',')')#turn list into string and also encode to utf-8 byte string to enable replace
-        """check whether there are observations without geometries"""
-        sql = r"""select obsid from obs_points where (Geometry is null or Geometry ='') and obsid in """ + self.sqlpart2
-        ConnectionOK, result = utils.sql_load_fr_db(sql)#ok to send a utf-8 byte string even though unicode is preferred
-        if len(result)==0:
-            self.do_it()
-        else:
-            utils.pop_up_info("Positions (geometries) are missing for\n" + result[0][0] + "\nCoordinates will not be updated.")
-        
-    def do_it(self):
-        """Update coordinates for all observations in self.observations"""
-        
-        sql = r"""UPDATE OR IGNORE obs_points SET east=X(Geometry) WHERE obsid IN """ + self.sqlpart2
-        utils.sql_alter_db(sql)
-        sql = r"""UPDATE OR IGNORE obs_points SET north=Y(Geometry) WHERE obsid IN """ + self.sqlpart2
-        utils.sql_alter_db(sql)
+class UpdateGeometry(object):
+    def __init(self, ):
+        """
+        :return: None
+        """
+        pass
 
-class updateposition():
+    def update_coordinates(self, observations=[]):
+        """
+        Updates coordinates in table from geometry
+        :param observations: List of unicode strings
+        :return: None
+        """
+        observations_string_for_sql = self.create_observation_string(observations)
+        sql = u''.join([u"select obsid from obs_points where (Geometry is null or Geometry ='') and obsid in ", observations_string_for_sql])
+        is_empty = self.check_not_empty_result(sql, "Coordinates will not be updated because positions (geometries) are missing for")
+        if is_empty:
+            return
 
-    def __init__(self, observations=[]):#observations is supposed to be a list of unicode strings
-        self.observations = observations
-        i = 0
-        for obs in observations:
-                self.observations[i] = obs.encode('utf-8') #turn into a list of python byte strings
-                i += 1
-        self.sqlpart2 =(str(self.observations).encode('utf-8').replace('[','(')).replace(']',')')#turn list into string and also encode to utf-8 byte string to enable replace
-        """check whether there are observations without coordinates"""
-        sql = r"""select obsid from obs_points where (east is null or east ='' or  north is null or north = '') and obsid in """ + self.sqlpart2
-        ConnectionOK, result = utils.sql_load_fr_db(sql)
-        if len(result)==0:
-            self.do_it()
-        else:
-            utils.pop_up_info("Coordinates are missing for\n" + result[0][0] + "\nPositions (geometry) will not be updated.")
-        
-    def do_it(self):
-        """Update positions for all observations in self.observations"""
-        # First find EPSG-ID for the CRS
+        update_east = u''.join([u"UPDATE OR IGNORE obs_points SET east=X(Geometry) WHERE obsid IN ", observations_string_for_sql])
+        update_north = u''.join([u"UPDATE OR IGNORE obs_points SET north=Y(Geometry) WHERE obsid IN ", observations_string_for_sql])
+        list_of_sqls = [update_east.encode('utf-8'), update_north.encode('utf-8')]
+        utils.sql_alter_db(list_of_sqls)
+
+    def update_position(self, observations=[]):
+        """
+        Updates geometries from coordinates in table
+        :param observations: List of unicode strings
+        :return: None
+        """
+        observations_string_for_sql = self.create_observation_string(observations)
+        sql = u''.join([u"select obsid from obs_points where (Geometry is null or Geometry ='') and obsid in ", observations_string_for_sql])
+        is_empty = self.check_not_empty_result(sql, "Positions (geometries) will not be updated because coordinates are missing for")
+        if is_empty:
+            return
+
         sql = r"""SELECT srid FROM geometry_columns where f_table_name = 'obs_points'"""
         ConnectionOK, result = utils.sql_load_fr_db(sql)
-        EPSGID= str(result[0][0])
+        EPSGID= utils.returnunicode(result[0][0])
         #Then do the operation
-        sql = r"""Update or ignore 'obs_points' SET Geometry=MakePoint(east, north, """
-        sql += EPSGID
-        sql += """) WHERE obsid IN """ + self.sqlpart2
-        utils.sql_alter_db(sql)
+        sql = u''.join([u"Update or ignore 'obs_points' SET Geometry=MakePoint(east, north, ", EPSGID, u") WHERE obsid IN ", observations_string_for_sql])
+        utils.sql_alter_db(sql.encode('utf-8'))
+
+    @staticmethod
+    def create_observation_string(observations=[]):
+        ur"""
+        Creates a string from a list of observations
+        :param observations: A list of observations
+        :return: A string surrounded by ( and )
+
+        >>> UpdateGeometry.create_observation_string([u'1', u'2', u'3'])
+        u'(1, 2, 3)'
+        """
+        observations = [utils.returnunicode(obs) for obs in observations]
+        observations_string_for_sql = u''.join([u'(', u', '.join(observations), u')'])  #turn list into string
+        return observations_string_for_sql
+
+    def check_not_empty_result(self, sql, errormsg):
+        """
+        Check if sql returns an empty result
+        :param sql: An sql string
+        :param errormsg: An error msg to print if the result is empty
+        :return: 1 if empty or 0 if not empty
+        """
+        encoded = sql.encode('utf-8')
+        connectionOK, result = utils.sql_load_fr_db(encoded)
+        if len(result)==0:
+            return 1
+        else:
+            utils.pop_up_info(errormsg + "\n" + result[0][0] + "\n")
+            return 0

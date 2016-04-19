@@ -823,60 +823,46 @@ class midvatten:
             self.midvsettingsdialog = midvsettingsdialog.midvsettingsdialogdock(self.iface.mainWindow(),self.iface, self.ms)#self.iface as arg?
 
     def updatecoord(self):
-        all_critical_layers=('obs_points')
-        err_flag = utils.verify_msettings_loaded_and_layer_edit_mode(self.iface, self.ms, all_critical_layers)#verify midv settings are loaded
-        layername = 'obs_points'
-        err_flag = utils.verify_this_layer_selected_and_not_in_edit_mode(err_flag, layername)
-        if err_flag == 0:
-            sanity = utils.askuser("AllSelected","""Do you want to update coordinates\nfor All or Selected objects?""")
-            if sanity.result == 0:  #IF USER WANT ALL OBJECTS TO BE UPDATED
-                sanity = utils.askuser("YesNo","""Sanity check! This will alter the database.\nCoordinates will be written in fields east and north\nfor ALL objects in the obs_points table.\nProceed?""")
-                if sanity.result==1:
-                    ALL_OBS = utils.sql_load_fr_db("select distinct obsid from obs_points")[1]#a list of unicode strings is returned
-                    observations = [None]*len(ALL_OBS)
-                    i = 0
-                    for obs in ALL_OBS:
-                        observations[i] = obs[0]
-                        i+=1
-                    from coords_and_position import updatecoordinates
-                    updatecoordinates(observations)
-            elif sanity.result == 1:    #IF USER WANT ONLY SELECTED OBJECTS TO BE UPDATED
-                sanity = utils.askuser("YesNo","""Sanity check! This will alter the database.\nCoordinates will be written in fields east and north\nfor SELECTED objects in the obs_points table.\nProceed?""")
-                if sanity.result==1:
-                    layer = self.iface.activeLayer()
-                    if utils.selection_check(layer) == 'ok':    #Checks that there are some objects selected at all!
-                        observations = utils.getselectedobjectnames(layer)#a list of unicode strings is returned
-                        from coords_and_position import updatecoordinates
-                        updatecoordinates(observations)
+        continue_question = 'Do you want to update coordinates\nfor All or Selected objects?'
+        sanity_question_all = """Sanity check! This will alter the database.\nCoordinates will be written in fields east and north\nfor ALL objects in the obs_points table.\nProceed?"""
+        sanity_question_selected = """Sanity check! This will alter the database.\nCoordinates will be written in fields east and north\nfor SELECTED objects in the obs_points table.\nProceed?"""
+
+        self.update_geometry(u'update_coordinates', continue_question, sanity_question_all, sanity_question_selected)
 
     def updateposition(self):
+        continue_question = 'Do you want to update position\nfor All or Selected objects?'
+        sanity_question_all = """Sanity check! This will alter the database.\nALL objects in obs_points will be moved to positions\ngiven by their coordinates in fields east and north.\nProceed?"""
+        sanity_question_selected = """Sanity check! This will alter the database.\nSELECTED objects in obs_points will be moved to positions\ngiven by their coordinates in fields east and north.\nProceed?"""
+
+        self.update_geometry(u'update_position', continue_question, sanity_question_all, sanity_question_selected)
+
+    def update_geometry(self, update_method, continue_question, sanity_question_all, sanity_question_selected):
         all_critical_layers=('obs_points')
         err_flag = utils.verify_msettings_loaded_and_layer_edit_mode(self.iface, self.ms, all_critical_layers)#verify midv settings are loaded
         layername = 'obs_points'
         err_flag = utils.verify_this_layer_selected_and_not_in_edit_mode(err_flag, layername)
         if err_flag == 0:
+            sanity = utils.askuser("AllSelected", continue_question)
+
+            from coords_and_position import UpdateGeometry
+            updategeometry = UpdateGeometry()
+            method = getattr(updategeometry, update_method)
             layer = self.iface.activeLayer()
-            sanity = utils.askuser("AllSelected","""Do you want to update position\nfor All or Selected objects?""")
-            if sanity.result == 0:      #IF USER WANT ALL OBJECTS TO BE UPDATED
-                sanity = utils.askuser("YesNo","""Sanity check! This will alter the database.\nALL objects in obs_points will be moved to positions\ngiven by their coordinates in fields east and north.\nProceed?""")
+
+            if sanity.result == 0:  #IF USER WANT ALL OBJECTS TO BE UPDATED
+                sanity = utils.askuser("YesNo", sanity_question_all)
                 if sanity.result==1:
-                    ALL_OBS = utils.sql_load_fr_db("select distinct obsid from obs_points")[1]
-                    observations = [None]*len(ALL_OBS)
-                    i = 0
-                    for obs in ALL_OBS:
-                        observations[i] = obs[0]
-                        i+=1
-                    from coords_and_position import updateposition
-                    updateposition(observations)
-                    layer.updateExtents()
-            elif sanity.result == 1:    #IF USER WANT ONLY SELECTED OBJECTS TO BE UPDATED
-                sanity = utils.askuser("YesNo","""Sanity check! This will alter the database.\nSELECTED objects in obs_points will be moved to positions\ngiven by their coordinates in fields east and north.\nProceed?""")
+                    observations = utils.get_all_obsids()
+            elif sanity.result == 1:  #IF USER WANT ONLY SELECTED OBJECTS TO BE UPDATED
+                sanity = utils.askuser("YesNo", sanity_question_selected)
                 if sanity.result==1:
                     if utils.selection_check(layer) == 'ok':    #Checks that there are some objects selected at all!
-                        observations = utils.getselectedobjectnames(layer)
-                        from coords_and_position import updateposition
-                        updateposition(observations)
-                        layer.updateExtents()
+                        observations = utils.getselectedobjectnames(layer)  #a list of unicode strings is returned
+            else:
+                return
+
+            method([utils.returnunicode(x) for x in observations])
+            layer.updateExtents()
 
     def vacuum_db(self):
         err_flag = utils.verify_msettings_loaded_and_layer_edit_mode(self.iface, self.ms)#verify midv settings are loaded

@@ -511,7 +511,6 @@ class TestWlvlloggImport(object):
 
                     test_wlvllogg_import(self)
 
-                    print(alterdb.args_called_with)
 
 
 class TestInterlab4Importer():
